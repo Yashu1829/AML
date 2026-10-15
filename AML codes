@@ -1,0 +1,344 @@
+Experiment-1
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.metrics import mean_squared_error, r2_score
+data = pd.read_csv("california_housing.csv") # california_housing.csv -> github
+data = data.dropna()
+x = data.drop("median_house_value", axis=1)
+y = data["median_house_value"]
+numerical_features = [
+    "longitude",
+    "latitude",
+    "housing_median_age",
+    "total_rooms",
+    "total_bedrooms",
+    "population",
+    "households",
+    "median_income"
+]
+categorical_features = ["ocean_proximity"]
+ 
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), numerical_features),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features)
+    ]
+)
+ 
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+x_train_scaled = preprocessor.fit_transform(x_train)
+x_test_scaled = preprocessor.transform(x_test) 
+models = {
+    "LinearRegression": LinearRegression(),
+    "Ridge": Ridge(alpha=1.0),
+    "Lasso": Lasso(alpha=0.1),
+    "ElasticNet": ElasticNet(alpha=0.1, l1_ratio=0.5)
+}
+ 
+coefficients = {}
+for name, model in models.items():
+    model.fit(x_train_scaled, y_train)
+    y_pred = model.predict(x_test_scaled)
+    print(name)
+    print("MSE:", round(mean_squared_error(y_test, y_pred),4))
+    print("R2:", round(r2_score(y_test, y_pred),2))
+    print()
+    print(f"{name} Nonzero coefficient: {(model.coef_ != 0).sum()}/{len(model.coef_)}")
+    print("-" * 60)
+    coefficients[name] = model.coef_
+plt.figure(figsize=(12,6))
+for name, coef in coefficients.items():
+    plt.plot(coef, marker="o", label=name)
+ 
+plt.xlabel("Feature Index")
+plt.ylabel("Coefficient Value")
+plt.title("Linear Regression, Lasso, Ridge, ElasticNet Coefficient Comparison")
+plt.legend()
+plt.grid(True)
+plt.show()
+-------------------------------------------------------------------------------------------------------------------
+Experiment-2
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.svm import SVC
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
+import time
+
+data = pd.read_csv("iris.csv")
+data = data[data["variety"].isin(["Setosa", "Virginica"])]
+
+features = data[["sepal.length", "sepal.width"]].values
+target = LabelEncoder().fit_transform(data["variety"])
+
+x_train, x_test, y_train, y_test = train_test_split(
+    features, target, train_size=0.7, random_state=42, stratify=target
+)
+
+scaler = StandardScaler()
+x_train_scaled = scaler.fit_transform(x_train)
+x_test_scaled = scaler.transform(x_test)
+models = {}
+
+for kernel in ["linear", "poly", "rbf"]:
+    model = SVC(kernel=kernel, degree=3, gamma="scale", random_state=42)
+
+    start_time = time.time()
+    model.fit(x_train_scaled, y_train)
+    training_time = time.time() - start_time
+
+    predictions = model.predict(x_test_scaled)
+    accuracy = accuracy_score(y_test, predictions)
+    matrix = confusion_matrix(y_test, predictions)
+
+    models[kernel] = model
+
+    print("\nKernel:", kernel)
+    print("Training time: {:.4f} seconds".format(training_time))
+    print("Accuracy:", round(accuracy * 100, 2), "%")
+    print("Confusion Matrix:\n", matrix)
+    
+def plot_boundary(features, target, model, title):
+    x_min, x_max = features[:, 0].min() - 1, features[:, 0].max() + 1
+    y_min, y_max = features[:, 1].min() - 1, features[:, 1].max() + 1
+
+    grid_x, grid_y = np.meshgrid(
+        np.arange(x_min, x_max, 0.02),
+        np.arange(y_min, y_max, 0.02)
+    )
+
+    predictions = model.predict(np.c_[grid_x.ravel(), grid_y.ravel()])
+    predictions = predictions.reshape(grid_x.shape)
+
+    plt.contourf(grid_x, grid_y, predictions, alpha=0.3, cmap="Set1")
+    scatter = plt.scatter(
+        features[:, 0], features[:, 1],
+        c=target, edgecolors="k", cmap="Set1"
+    )
+
+    plt.title(title)
+    plt.xlabel("Sepal Length (scaled)")
+    plt.ylabel("Sepal Width (scaled)")
+    plt.legend(*scatter.legend_elements(), title="Classes")
+    plt.show()
+
+for kernel, model in models.items():
+    plot_boundary(x_train_scaled, y_train, model, kernel + " Kernel")
+--------------------------------------------------------------------------------------------------------
+Experiment-3
+import pandas as pd
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.pipeline import make_pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import StackingClassifier
+
+data = pd.read_csv("breast-cancer.csv")
+data = data.drop(columns=["id"], errors="ignore")
+
+print("Dataset Shape:", data.shape)
+print("Target Distribution:\n", data["diagnosis"].value_counts())
+
+features = data.drop("diagnosis", axis=1)
+encoder = LabelEncoder()
+target = encoder.fit_transform(data["diagnosis"])
+
+print("Features Shape:", features.shape)
+print("Target Shape:", target.shape)
+
+models = [
+    ("Logistic Regression", make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000))),
+    ("KNN", make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=5))),
+    ("SVM", make_pipeline(StandardScaler(), SVC(kernel="linear", probability=True, random_state=42))),
+    ("Decision Tree", DecisionTreeClassifier(random_state=42)),
+    ("Naive Bayes", make_pipeline(StandardScaler(), GaussianNB()))
+]
+
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+print("\n--- Evaluating Individual Models ---")
+for name, model in models:
+    scores = cross_val_score(model, features, target, cv=cv, scoring="accuracy")
+    print(f"\nModel: {name}")
+    print("Cross-validation scores:", scores)
+    print("Mean Accuracy:", round(scores.mean() * 100, 4), "%")
+    print("Standard Deviation:", round(scores.std(), 4))
+
+stacking_model = StackingClassifier(
+    estimators=models,
+    final_estimator=LogisticRegression(max_iter=5000),
+    cv=5,
+    n_jobs=-1
+)
+
+print("\n--- Evaluating Stacking Ensemble ---")
+scores = cross_val_score(
+    stacking_model, features, target, cv=cv,
+    scoring="accuracy", n_jobs=-1
+)
+
+print("Cross-validation scores:", scores)
+print("Mean Accuracy:", round(scores.mean() * 100, 4), "%")
+print("Standard Deviation:", round(scores.std(), 4))
+
+stacking_model.fit(features, target)
+
+sample_patient = features.mean().to_frame().T
+prediction = stacking_model.predict(sample_patient)
+probabilities = stacking_model.predict_proba(sample_patient)
+diagnosis = encoder.inverse_transform(prediction)[0]
+
+print("\n=== Prediction Results for New Patient ===")
+print("Predicted Diagnosis:", diagnosis,
+      "(Malignant)" if diagnosis == "M" else "(Benign)")
+print("Probability of Benign (B):", round(probabilities[0][0] * 100, 2), "%")
+print("Probability of Malignant (M):", round(probabilities[0][1] * 100, 2), "%")
+----------------------------------------------------------------------------------------------------
+Experiment-4
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import GridSearchCV, validation_curve
+
+data = pd.read_csv("iris.csv")
+features = data[["sepal.length", "sepal.width", "petal.length", "petal.width"]]
+target = data["variety"]
+
+print("Dataset Shape:", data.shape)
+print("Features:\n", features.head())
+print("Target:\n", target.head())
+
+parameters = {
+    "max_depth": [None, 2, 3, 4, 5, 6, 7, 8],
+    "min_samples_split": [2, 4, 6, 8, 10]
+}
+
+model = DecisionTreeClassifier(random_state=42)
+grid = GridSearchCV(model, parameters, cv=5, scoring="accuracy", n_jobs=-1)
+grid.fit(features, target)
+
+print("\nBest Parameters:", grid.best_params_)
+print("Best Cross-Validation Accuracy:", grid.best_score_)
+
+depth_range = np.arange(1, 15)
+
+train_scores, validation_scores = validation_curve(
+    DecisionTreeClassifier(
+        min_samples_split=grid.best_params_["min_samples_split"],
+        random_state=42
+    ),
+    features, target,
+    param_name="max_depth",
+    param_range=depth_range,
+    cv=5, scoring="accuracy"
+)
+
+plt.plot(depth_range, train_scores.mean(axis=1), marker="o", label="Training Score")
+plt.plot(depth_range, validation_scores.mean(axis=1), marker="o", label="Cross-Validation Score")
+plt.title("Validation Curve for Decision Tree")
+plt.xlabel("Maximum Depth (max_depth)")
+plt.ylabel("Accuracy")
+plt.xticks(depth_range)
+plt.grid(True)
+plt.legend()
+plt.show()
+---------------------------------------------------------------------------------------------------------------
+Experiment-5
+!pip install -q hmmlearn seaborn
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from hmmlearn import hmm
+from sklearn.metrics import accuracy_score
+
+states = ["Rainy", "Sunny"]
+observations = ["walk", "shop", "clean"]
+
+obs_map = {obs: i for i, obs in enumerate(observations)}
+state_map = {state: i for i, state in enumerate(states)}
+
+sequence = ["walk", "shop", "clean", "clean", "walk", "walk", "shop"]
+encoded_sequence = np.array([obs_map[obs] for obs in sequence]).reshape(-1, 1)
+
+actual_states = ["Sunny", "Rainy", "Rainy", "Rainy", "Sunny", "Sunny", "Rainy"]
+encoded_states = np.array([state_map[state] for state in actual_states])
+
+model = hmm.CategoricalHMM(n_components=2, init_params="")
+model.startprob_ = [0.6, 0.4]
+model.transmat_ = [[0.7, 0.3], [0.4, 0.6]]
+model.emissionprob_ = [[0.1, 0.4, 0.5], [0.6, 0.3, 0.1]]
+
+log_probability, predicted_states = model.decode(encoded_sequence, algorithm="viterbi")
+predicted_names = [states[state] for state in predicted_states]
+
+print("Predicted States:", predicted_names)
+print("Actual States:", actual_states)
+print("Accuracy:", round(accuracy_score(encoded_states, predicted_states), 2))
+print("Log Probability:", round(log_probability, 2))
+
+def plot_matrix(matrix, rows, columns, title):
+    sns.heatmap(matrix, annot=True, fmt=".2f", cmap="Blues",
+                xticklabels=columns, yticklabels=rows)
+    plt.title(title)
+    plt.xlabel("To")
+    plt.ylabel("From")
+    plt.show()
+
+plot_matrix(model.transmat_, states, states, "State Transition Probabilities")
+plot_matrix(model.emissionprob_, states, observations, "Emission Probabilities")
+----------------------------------------------------------------------------------------------------
+Experiment-7
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+
+np.random.seed(42)
+features = np.random.rand(100, 1) * 6 - 3
+target = 0.5 * features**2 + features + 2 + np.random.randn(100, 1)
+
+x_train, x_val, y_train, y_val = train_test_split(
+    features, target, test_size=0.3, random_state=42
+)
+
+degrees = range(1, 16)
+train_errors, val_errors = [], []
+
+for degree in degrees:
+    poly = PolynomialFeatures(degree=degree, include_bias=False)
+    train_features = poly.fit_transform(x_train)
+    val_features = poly.transform(x_val)
+
+    model = LinearRegression()
+    model.fit(train_features, y_train)
+
+    train_errors.append(mean_squared_error(y_train, model.predict(train_features)))
+    val_errors.append(mean_squared_error(y_val, model.predict(val_features)))
+
+plt.plot(degrees, train_errors, marker="o", label="Training Error")
+plt.plot(degrees, val_errors, marker="o", label="Validation Error")
+plt.xlabel("Polynomial Degree")
+plt.ylabel("Mean Squared Error")
+plt.title("Bias-Variance Trade-off")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+optimal_degree = degrees[np.argmin(val_errors)]
+print("Optimal Degree:", optimal_degree)
+print("Minimum Validation Error:", round(min(val_errors), 4))
